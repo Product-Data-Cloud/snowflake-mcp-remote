@@ -1,0 +1,10 @@
+[project]
+name = "snowflake-mcp-server"
+version = "0.1.0"
+description = "Snowflake MCP Server for Cloud Run"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=0.2.0",
+    "snowflake-connector-python[pandas,secure-local-storage]>=3.7.0",
+    "cryptography>=41.0.0",
+]
