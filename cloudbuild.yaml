@@ -1,0 +1,10 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/snowflake-mcp:$COMMIT_SHA', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/snowflake-mcp:$COMMIT_SHA']
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args: ['run', 'deploy', 'snowflake-mcp', '--image', 'gcr.io/$PROJECT_ID/snowflake-mcp:$COMMIT_SHA', '--region', 'europe-west1', '--platform', 'managed', '--allow-unauthenticated', '--set-env-vars', 'SNOWFLAKE_ACCOUNT=RRNMGCG-PRODUCTDATACLOUD,SNOWFLAKE_USER=PDCDAVID,SNOWFLAKE_DATABASE=PRODUCT_DATA_CLOUD,SNOWFLAKE_SCHEMA=PDC_PRODUCTS,SNOWFLAKE_WAREHOUSE=COMPUTE_WH,SNOWFLAKE_ROLE=ACCOUNTADMIN', '--update-secrets', 'SNOWFLAKE_PRIVATE_KEY_CONTENT=snowflake-jwt-key:latest']
+images: ['gcr.io/$PROJECT_ID/snowflake-mcp:$COMMIT_SHA']
+timeout: '900s'
