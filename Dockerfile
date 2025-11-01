@@ -1,18 +1,21 @@
 FROM python:3.12-slim
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-# Install project
-COPY . /app
 WORKDIR /app
 
+# Copy requirements first for better caching
+COPY pyproject.toml ./
+
+# Install dependencies using pip
+RUN pip install --no-cache-dir -e .
+
+# Copy application code
+COPY . .
+
+# Set environment variables
 ENV PYTHONUNBUFFERED=1
+ENV PORT=8080
 
-# Install dependencies
-RUN uv sync
+EXPOSE 8080
 
-EXPOSE $PORT
-
-# Run FastMCP server
-CMD ["uv", "run", "server.py"]
+# Run the server
+CMD ["python", "server.py"]
