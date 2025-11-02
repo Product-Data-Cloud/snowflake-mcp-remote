@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives import serialization
 logger = logging.getLogger(__name__)
 logging.basicConfig(format="[%(levelname)s]: %(message)s", level=logging.INFO)
 
-mcp = FastMCP("Snowflake PDC V2.0")
+mcp = FastMCP("Snowflake PDC V2.1")
 
 # Configuration
 SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT", "RRNMGCG-PRODUCTDATACLOUD")
@@ -23,7 +23,7 @@ SNOWFLAKE_WAREHOUSE = os.getenv("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH")
 SNOWFLAKE_ROLE = os.getenv("SNOWFLAKE_ROLE", "ACCOUNTADMIN")
 SNOWFLAKE_PRIVATE_KEY_CONTENT = os.getenv("SNOWFLAKE_PRIVATE_KEY_CONTENT")
 
-# V2.0 Optimization: Default max rows
+# V2.1 Optimization: Default max rows
 DEFAULT_MAX_ROWS = 20
 
 def get_snowflake_connection():
@@ -49,7 +49,7 @@ def get_snowflake_connection():
     )
 
 def enforce_limit(sql: str, max_rows: int) -> str:
-    """V2.0: Automatically add LIMIT if missing"""
+    """V2.1: Automatically add LIMIT if missing"""
     sql_upper = sql.strip().upper()
     
     # Check if query already has LIMIT
@@ -68,7 +68,7 @@ def enforce_limit(sql: str, max_rows: int) -> str:
     return sql
 
 def optimize_columns(data: List[Dict], columns: List[str]) -> List[Dict]:
-    """V2.0: Reduce token usage by filtering large columns"""
+    """V2.1: Reduce token usage by filtering large columns"""
     if not data or len(data) == 0:
         return data
     
@@ -97,12 +97,13 @@ def optimize_columns(data: List[Dict], columns: List[str]) -> List[Dict]:
 @mcp.tool()
 def snowflake_query(sql: str, max_rows: int = DEFAULT_MAX_ROWS) -> Dict[str, Any]:
     """
-    Execute SQL query on Snowflake (V2.0 Optimized)
+    Execute SQL query on Snowflake (V2.1 Write-Enabled)
     
     Features:
     - Automatic LIMIT enforcement (default: 20 rows)
     - Token optimization (truncates large fields)
-    - Security checks (no DROP/DELETE/TRUNCATE)
+    - Write operations enabled (INSERT/UPDATE/DELETE with safety)
+    - Security: Blocks DROP/TRUNCATE, requires WHERE for UPDATE/DELETE
     
     Args:
         sql: SQL query to execute
@@ -115,28 +116,40 @@ def snowflake_query(sql: str, max_rows: int = DEFAULT_MAX_ROWS) -> Dict[str, Any
         # Security checks
         sql_upper = sql.strip().upper()
         
-        # Allow only safe operations
-        allowed_starts = ['SELECT', 'SHOW', 'DESCRIBE', 'CREATE', 'ALTER']
+        # V2.1: Allow write operations
+        allowed_starts = ['SELECT', 'SHOW', 'DESCRIBE', 'CREATE', 'ALTER', 'INSERT', 'UPDATE', 'DELETE']
         if not any(sql_upper.startswith(k) for k in allowed_starts):
             return {
                 "success": False, 
-                "error": "Only SELECT/SHOW/DESCRIBE/CREATE/ALTER allowed"
+                "error": "Only SELECT/SHOW/DESCRIBE/CREATE/ALTER/INSERT/UPDATE/DELETE allowed",
+                "version": "V2.1"
             }
         
-        # Block dangerous operations
-        dangerous = ['DROP', 'DELETE', 'TRUNCATE']
-        if any(k in sql_upper for k in dangerous):
+        # Block extremely dangerous operations
+        extremely_dangerous = ['DROP', 'TRUNCATE']
+        if any(k in sql_upper for k in extremely_dangerous):
             return {
                 "success": False, 
-                "error": "DROP/DELETE/TRUNCATE not allowed"
+                "error": "DROP/TRUNCATE not allowed for safety",
+                "version": "V2.1"
             }
         
-        # V2.0: Enforce LIMIT for SELECT queries
+        # V2.1: Safety check for UPDATE/DELETE - must have WHERE clause
+        if sql_upper.startswith('UPDATE') or sql_upper.startswith('DELETE'):
+            if 'WHERE' not in sql_upper:
+                return {
+                    "success": False,
+                    "error": "UPDATE/DELETE requires WHERE clause for safety",
+                    "hint": "Add WHERE clause to specify which rows to modify",
+                    "version": "V2.1"
+                }
+        
+        # V2.1: Enforce LIMIT for SELECT queries
         optimized_sql = enforce_limit(sql, max_rows)
         
         # Log optimization
         if optimized_sql != sql:
-            logger.info(f"V2.0: Added LIMIT {max_rows} to query")
+            logger.info(f"V2.1: Added LIMIT {max_rows} to query")
         
         # Execute query
         conn = get_snowflake_connection()
@@ -152,7 +165,7 @@ def snowflake_query(sql: str, max_rows: int = DEFAULT_MAX_ROWS) -> Dict[str, Any
             # Convert to dicts
             data = [dict(zip(columns, row)) for row in results]
             
-            # V2.0: Optimize for token usage
+            # V2.1: Optimize for token usage
             optimized_data = optimize_columns(data, columns)
             
             cursor.close()
@@ -164,17 +177,21 @@ def snowflake_query(sql: str, max_rows: int = DEFAULT_MAX_ROWS) -> Dict[str, Any
                 "columns": columns,
                 "row_count": len(optimized_data),
                 "optimized": True,
-                "version": "V2.0"
+                "version": "V2.1"
             }
         else:
-            # DDL operations
+            # DDL/DML operations (INSERT/UPDATE/DELETE/CREATE/ALTER)
+            rows_affected = cursor.rowcount
             cursor.close()
             conn.close()
             
+            operation = sql_upper.split()[0]
+            
             return {
                 "success": True,
-                "message": "DDL executed successfully",
-                "version": "V2.0"
+                "message": f"{operation} executed successfully",
+                "rows_affected": rows_affected if rows_affected >= 0 else "N/A",
+                "version": "V2.1"
             }
             
     except Exception as e:
@@ -182,7 +199,7 @@ def snowflake_query(sql: str, max_rows: int = DEFAULT_MAX_ROWS) -> Dict[str, Any
         return {
             "success": False,
             "error": str(e),
-            "version": "V2.0"
+            "version": "V2.1"
         }
 
 @mcp.tool()
@@ -212,7 +229,13 @@ def connection_status() -> Dict[str, Any]:
             "database": result[3],
             "schema": result[4],
             "auth_method": "JWT",
-            "version": "V2.0",
+            "version": "V2.1",
+            "capabilities": [
+                "READ: SELECT/SHOW/DESCRIBE",
+                "WRITE: INSERT/UPDATE/DELETE (with WHERE)",
+                "DDL: CREATE/ALTER",
+                "BLOCKED: DROP/TRUNCATE"
+            ],
             "optimizations": [
                 "Auto-LIMIT enforcement",
                 "Token-optimized responses",
@@ -226,13 +249,15 @@ def connection_status() -> Dict[str, Any]:
             "success": False,
             "connected": False,
             "error": str(e),
-            "version": "V2.0"
+            "version": "V2.1"
         }
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
-    logger.info(f"🚀 Snowflake MCP V2.0 starting on port {port}")
+    logger.info(f"🚀 Snowflake MCP V2.1 starting on port {port}")
+    logger.info("✅ Write-Enabled: INSERT | UPDATE (WHERE) | DELETE (WHERE)")
     logger.info("✅ Optimizations: Auto-LIMIT | Token-Optimized | Column Truncation")
+    logger.info("🔒 Security: Blocks DROP/TRUNCATE | Requires WHERE for UPDATE/DELETE")
     
     asyncio.run(
         mcp.run_async(
