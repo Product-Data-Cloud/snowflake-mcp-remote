@@ -5,10 +5,10 @@ steps:
       - '-f'
       - 'Dockerfile.github'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/github-mcp:$COMMIT_SHA'
+      - 'gcr.io/$PROJECT_ID/github-mcp:latest'
       - '.'
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/github-mcp:$COMMIT_SHA']
+    args: ['push', 'gcr.io/$PROJECT_ID/github-mcp:latest']
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args: 
@@ -16,7 +16,7 @@ steps:
       - 'deploy'
       - 'github-mcp'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/github-mcp:$COMMIT_SHA'
+      - 'gcr.io/$PROJECT_ID/github-mcp:latest'
       - '--region'
       - 'europe-west1'
       - '--platform'
@@ -25,5 +25,5 @@ steps:
       - '--set-secrets'
       - 'GITHUB_PERSONAL_ACCESS_TOKEN=github-pat:latest'
 images: 
-  - 'gcr.io/$PROJECT_ID/github-mcp:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/github-mcp:latest'
 timeout: '900s'
