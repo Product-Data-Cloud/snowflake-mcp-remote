@@ -382,8 +382,13 @@ def connection_status() -> Dict[str, Any]:
             "version": "V2.2"
         }
 
+# Export the mcp.app for uvicorn
+app = mcp.app
+
 if __name__ == "__main__":
+    import uvicorn
     port = int(os.getenv("PORT", 8080))
+    
     logger.info(f"🚀 Snowflake MCP V2.2 starting on port {port}")
     logger.info("✅ NEW: MERGE/UPSERT support")
     logger.info("✅ NEW: Transaction control (BEGIN/COMMIT/ROLLBACK)")
@@ -393,10 +398,9 @@ if __name__ == "__main__":
     logger.info("✅ Optimizations: Auto-LIMIT | Token-Optimized | Column Truncation")
     logger.info("🔒 Security: Blocks DROP/TRUNCATE | Requires WHERE for UPDATE/DELETE")
     
-    asyncio.run(
-        mcp.run_async(
-            transport="streamable-http",
-            host="0.0.0.0",
-            port=port,
-        )
+    uvicorn.run(
+        "server:app",
+        host="0.0.0.0",
+        port=port,
+        log_level="info"
     )
