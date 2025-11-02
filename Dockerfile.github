@@ -1,0 +1,25 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install
+COPY requirements-github.txt .
+RUN pip install --no-cache-dir -r requirements-github.txt
+
+# Copy server
+COPY github_server.py .
+
+# Environment
+ENV PORT=8081
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8081
+
+# Start server
+CMD ["python", "github_server.py"]
