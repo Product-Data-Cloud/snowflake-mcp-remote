@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives import serialization
 logger = logging.getLogger(__name__)
 logging.basicConfig(format="[%(levelname)s]: %(message)s", level=logging.INFO)
 
-mcp = FastMCP("Snowflake PDC V2.2")
+mcp = FastMCP("Snowflake PDC V2.3")
 
 # Configuration
 SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT", "RRNMGCG-PRODUCTDATACLOUD")
@@ -81,33 +81,32 @@ def optimize_columns(data: List[Dict], columns: List[str]) -> List[Dict]:
 @mcp.tool()
 def snowflake_query(sql: str, max_rows: int = DEFAULT_MAX_ROWS) -> Dict[str, Any]:
     """
-    Execute SQL query on Snowflake (V2.2 Enhanced)
+    Execute SQL query on Snowflake (V2.3 - SSE Transport)
     
-    NEW in V2.2: MERGE, Transactions (BEGIN/COMMIT/ROLLBACK), Dynamic LIMIT (1-1000)
+    Features: MERGE, Transactions (BEGIN/COMMIT/ROLLBACK), Dynamic LIMIT (1-1000)
     """
     try:
         if max_rows < 1 or max_rows > MAX_ROWS_LIMIT:
-            return {"success": False, "error": f"max_rows must be between 1 and {MAX_ROWS_LIMIT}", "version": "V2.2"}
+            return {"success": False, "error": f"max_rows must be between 1 and {MAX_ROWS_LIMIT}", "version": "V2.3"}
         
         sql_upper = sql.strip().upper()
         
-        # V2.2: Added MERGE and transaction support
         allowed_starts = ['SELECT', 'SHOW', 'DESCRIBE', 'CREATE', 'ALTER', 'INSERT', 'UPDATE', 'DELETE', 'MERGE', 'BEGIN', 'COMMIT', 'ROLLBACK']
         if not any(sql_upper.startswith(k) for k in allowed_starts):
-            return {"success": False, "error": f"Only {', '.join(allowed_starts)} allowed", "version": "V2.2"}
+            return {"success": False, "error": f"Only {', '.join(allowed_starts)} allowed", "version": "V2.3"}
         
         extremely_dangerous = ['DROP', 'TRUNCATE']
         if any(k in sql_upper for k in extremely_dangerous):
-            return {"success": False, "error": "DROP/TRUNCATE not allowed for safety", "version": "V2.2"}
+            return {"success": False, "error": "DROP/TRUNCATE not allowed for safety", "version": "V2.3"}
         
         if not sql_upper.startswith('MERGE'):
             if sql_upper.startswith('UPDATE') or sql_upper.startswith('DELETE'):
                 if 'WHERE' not in sql_upper:
-                    return {"success": False, "error": "UPDATE/DELETE requires WHERE clause", "version": "V2.2"}
+                    return {"success": False, "error": "UPDATE/DELETE requires WHERE clause", "version": "V2.3"}
         
         optimized_sql = enforce_limit(sql, max_rows)
         if optimized_sql != sql:
-            logger.info(f"V2.2: Added LIMIT {max_rows}")
+            logger.info(f"V2.3: Added LIMIT {max_rows}")
         
         conn = get_snowflake_connection()
         cursor = conn.cursor()
@@ -120,24 +119,24 @@ def snowflake_query(sql: str, max_rows: int = DEFAULT_MAX_ROWS) -> Dict[str, Any
             optimized_data = optimize_columns(data, columns)
             cursor.close()
             conn.close()
-            return {"success": True, "data": optimized_data, "columns": columns, "row_count": len(optimized_data), "optimized": True, "version": "V2.2"}
+            return {"success": True, "data": optimized_data, "columns": columns, "row_count": len(optimized_data), "optimized": True, "version": "V2.3"}
         
         elif sql_upper.startswith(('BEGIN', 'COMMIT', 'ROLLBACK')):
             cursor.close()
             conn.close()
             operation = sql_upper.split()[0]
-            return {"success": True, "message": f"{operation} executed", "transaction_control": True, "version": "V2.2"}
+            return {"success": True, "message": f"{operation} executed", "transaction_control": True, "version": "V2.3"}
         
         else:
             rows_affected = cursor.rowcount
             cursor.close()
             conn.close()
             operation = sql_upper.split()[0]
-            return {"success": True, "message": f"{operation} executed", "rows_affected": rows_affected if rows_affected >= 0 else "N/A", "version": "V2.2"}
+            return {"success": True, "message": f"{operation} executed", "rows_affected": rows_affected if rows_affected >= 0 else "N/A", "version": "V2.3"}
             
     except Exception as e:
         logger.error(f"Query failed: {e}")
-        return {"success": False, "error": str(e), "version": "V2.2"}
+        return {"success": False, "error": str(e), "version": "V2.3"}
 
 @mcp.tool()
 def connection_status() -> Dict[str, Any]:
@@ -159,30 +158,31 @@ def connection_status() -> Dict[str, Any]:
             "database": result[3],
             "schema": result[4],
             "auth_method": "JWT",
-            "version": "V2.2",
+            "version": "V2.3",
+            "transport": "SSE",
             "capabilities": [
                 "READ: SELECT/SHOW/DESCRIBE",
                 "WRITE: INSERT/UPDATE/DELETE (with WHERE)",
-                "UPSERT: MERGE (NEW!)",
-                "TRANSACTIONS: BEGIN/COMMIT/ROLLBACK (NEW!)",
+                "UPSERT: MERGE",
+                "TRANSACTIONS: BEGIN/COMMIT/ROLLBACK",
                 "DDL: CREATE/ALTER",
                 "BLOCKED: DROP/TRUNCATE"
             ],
             "limits": {"max_rows": f"1-{MAX_ROWS_LIMIT}", "default_rows": DEFAULT_MAX_ROWS},
-            "optimizations": ["Auto-LIMIT", "Token-optimized", "Column truncation", "Dynamic limits (NEW!)"]
+            "optimizations": ["Auto-LIMIT", "Token-optimized", "Column truncation", "Dynamic limits"]
         }
     except Exception as e:
         logger.error(f"Connection failed: {e}")
-        return {"success": False, "connected": False, "error": str(e), "version": "V2.2"}
+        return {"success": False, "connected": False, "error": str(e), "version": "V2.3"}
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
-    logger.info(f"🚀 Snowflake MCP V2.2 starting on port {port}")
-    logger.info("✅ NEW: MERGE/UPSERT | Transactions | Dynamic LIMIT (1-1000)")
+    logger.info(f"🚀 Snowflake MCP V2.3 (SSE) starting on port {port}")
+    logger.info("✅ Transport: SSE (Claude Code compatible)")
     
     asyncio.run(
         mcp.run_async(
-            transport="streamable-http",
+            transport="sse",
             host="0.0.0.0",
             port=port,
         )
